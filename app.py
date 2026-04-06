@@ -6,7 +6,7 @@ import pytz, os
 
 app = Flask(__name__)
 
-ACCOUNT_SID = "ACe12f3117ae792a3d7d12806d4b81f66c"
+ACCOUNT_SID = "ACe12f3117ae792a3d7d12806d4b81f66"
 AUTH_TOKEN  = "d386286b38b7642c1388864b3e089690"
 FROM_NUMBER = "+16812726403"
 TO_NUMBER   = "+12159627989"
@@ -178,28 +178,33 @@ def get_ampm():
 @app.route("/confirm", methods=["GET", "POST"])
 def confirm():
     digit = request.form.get("Digits", "")
+
     if digit == "2":
         return redirect("/incoming")
+
     if digit != "1":
         return say("Invalid selection. <break time='200ms'/> Goodbye!")
+
     wake_time = app.config.get("WAKE_TIME")
     time_spoken = app.config.get("TIME_SPOKEN")
     date_spoken = app.config.get("DATE_SPOKEN")
+
     if not wake_time:
         return say("Something went wrong. <break time='200ms'/> Please call back. Goodbye!")
+
     if wakeup_job["sid"]:
         try:
             client = Client(ACCOUNT_SID, AUTH_TOKEN)
             client.calls(wakeup_job["sid"]).update(status="canceled")
         except:
             pass
-    now_utc = datetime.now(pytz.utc)
-    now_et = datetime.now(ET)
-    delay_seconds = (wake_time - now_et).total_seconds()
-    wake_time_utc = now_utc + timedelta(seconds=delay_seconds)
+
+    wake_time_utc = wake_time.astimezone(pytz.utc)
+
     now_str = datetime.now(ET)
     day_ord = ordinal(now_str.day)
     time_now = format_time_spoken(now_str.hour, now_str.minute)
+
     mickey_twiml = (
         "<Response>"
         "<Play>" + MICKEY_MP3 + "</Play>"
@@ -212,26 +217,31 @@ def confirm():
         "</Say>"
         "</Response>"
     )
+
     client = Client(ACCOUNT_SID, AUTH_TOKEN)
+
     call = client.calls.create(
         to=TO_NUMBER,
         from_=FROM_NUMBER,
         twiml=mickey_twiml,
-        schedule_type="fixed",
-        send_at=wake_time_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+        schedule_at=wake_time_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
     )
+
     wakeup_job["sid"] = call.sid
     wakeup_job["time_str"] = time_spoken
     wakeup_job["date_str"] = date_spoken
+
     r = VoiceResponse()
     gather = Gather(num_digits=1, action="/after_confirm", method="POST", timeout=10)
     gather.say(ssml(
         "You have a confirmed wakeup <break time='200ms'/> for " + date_spoken +
-        ", <break time='200ms'/> " + time_spoken + ". <break time='600ms'/> "
-        "Press one to hear your current wakeup settings."
+        ", <break time='200ms'/> " + time_spoken +
+        ". <break time='600ms'/> Press one to hear your current wakeup settings."
     ), voice=VOICE)
+
     r.append(gather)
     r.say(ssml("Have a magical night!"), voice=VOICE)
+
     return Response(str(r), mimetype="text/xml")
 
 @app.route("/after_confirm", methods=["GET", "POST"])
